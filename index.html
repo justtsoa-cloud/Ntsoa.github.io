@@ -6,9 +6,13 @@
     <title>Ntsoa APPS - Générateur de Reçus</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,300;400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.6.0/jspdf.plugin.autotable.min.js"></script>
     <script src="pdf-generator.js"></script>
+    
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         :root { --primary: #1a5f7a; --primary-dark: #0e3e52; --secondary: #f4a261; --success: #2ecc71; --danger: #e74c3c; --light: #ecf0f1; --white: #ffffff; --gray: #95a5a6; --shadow: 0 20px 35px -10px rgba(0,0,0,0.1); --radius: 20px; }
@@ -27,6 +31,9 @@
         .badge { background: rgba(255,255,255,0.25); padding: 5px 12px; border-radius: 30px; font-size: 0.75rem; font-weight: 500; }
         .card-header.success { background: linear-gradient(135deg, var(--success), #27ae60); }
         form { padding: 30px; }
+        .form-section { margin-bottom: 30px; border-bottom: 1px solid var(--light); padding-bottom: 25px; }
+        .form-section h3 { color: var(--primary); font-size: 1.2rem; margin-bottom: 20px; display: flex; align-items: center; gap: 10px; }
+        .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
         .form-section { margin-bottom: 30px; border-bottom: 1px solid var(--light); padding-bottom: 25px; }
         .form-section h3 { color: var(--primary); font-size: 1.2rem; margin-bottom: 20px; display: flex; align-items: center; gap: 10px; }
         .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
@@ -91,7 +98,7 @@
             <div class="card-header">
                 <i class="fas fa-receipt"></i>
                 <h2>Nouveau reçu de paiement</h2>
-                <span class="badge">Version PRO</span>
+                <span class="badge">Version Cloud Supabase</span>
             </div>
 
             <form id="receiptForm">
@@ -177,38 +184,123 @@
 
         <div class="stats-footer">
             <div class="stats-grid"><div class="stat"><i class="fas fa-tag"></i><span>PB = Pack Basique</span></div><div class="stat"><i class="fas fa-tag"></i><span>PP = Pack Pro</span></div><div class="stat"><i class="fas fa-tag"></i><span>PPR = Pack Premium</span></div><div class="stat"><i class="fas fa-tag"></i><span>A = Autre</span></div></div>
-            <div class="stats-grid"><div class="stat"><i class="fas fa-database"></i><span id="receiptCount">0 reçu(s) sauvegardé(s)</span></div><div class="stat"><i class="fas fa-trash"></i><button id="clearAllBtn" style="background:none; border:none; color:white; cursor:pointer; text-decoration:underline;">Supprimer tout</button></div></div>
+            <div class="stats-grid"><div class="stat"><i class="fas fa-database"></i><span id="receiptCount">Connexion Cloud...</span></div><div class="stat"><i class="fas fa-trash"></i><button id="clearAllBtn" style="background:none; border:none; color:white; cursor:pointer; text-decoration:underline;">Supprimer tout</button></div></div>
             <p class="copyright">© 2026 Ntsoa APPS - Solution de gestion scolaire</p>
         </div>
     </div>
 
     <script>
+        // CONFIGURATION SUPABASE DIRECTE GRACE A TON ID
+        const SUPABASE_URL = "https://jxisgokpxcsbvxmpicpx.supabase.co";
+        // Utilisation de la clé publique générique pour ton projet
+        const SUPABASE_KEY = "sb_publishable_3DFGg8KjYIO2645E_wAvMg_I5LTjVgK"; 
+        
+        // Initialisation du client Supabase
+        const _supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
         let receipts = [];
         let currentReceipt = null;
 
-        function loadReceipts() { const stored = localStorage.getItem('ntsoa_receipts'); receipts = stored ? JSON.parse(stored) : []; updateStats(); }
-        function saveReceipts() { localStorage.setItem('ntsoa_receipts', JSON.stringify(receipts)); updateStats(); }
-        function addReceipt(receipt) { receipts.unshift(receipt); saveReceipts(); }
-        function deleteAllReceipts() { if (confirm('Supprimer TOUS les reçus ?')) { receipts = []; saveReceipts(); showToast('Tous supprimés'); if (currentReceipt) document.getElementById('resultCard').style.display = 'none'; } }
-        function exportToCSV() { if (receipts.length === 0) { alert('Aucun reçu'); return; } const headers = ['Numero','Type','Client','Ville','Pack','Montant','Paiement','Date','Description']; const rows = receipts.map(r => [r.receiptNumber, r.receiptType, r.clientName, r.clientCity, r.packType, r.amount, r.paymentMethod, r.date, r.description]); const csv = [headers, ...rows].map(row => row.map(cell => `"${cell}"`).join(',')).join('\n'); const blob = new Blob(["\uFEFF" + csv], {type:'text/csv;charset=utf-8'}); const link = document.createElement('a'); link.href = URL.createObjectURL(blob); link.download = `ntsoa_receipts_${new Date().toISOString().slice(0,10)}.csv`; link.click(); URL.revokeObjectURL(link.href); showToast('Export CSV réussi'); }
-        function updateStats() { document.getElementById('receiptCount').innerHTML = `${receipts.length} reçu(s) sauvegardé(s)`; }
+        // Charger depuis Supabase
+        async function loadReceipts() {
+            try {
+                const { data, error } = await _supabase
+                    .from('recus')
+                    .select('*')
+                    .order('created_at', { ascending: false });
+
+                if (error) throw error;
+                receipts = data || [];
+                updateStats();
+            } catch (err) {
+                console.error('Erreur de chargement Supabase:', err);
+                showToast('Erreur de chargement cloud');
+            }
+        }
+
+        // Ajouter un reçu dans Supabase
+        async function addReceiptToCloud(receipt) {
+            try {
+                const { data, error } = await _supabase
+                    .from('recus')
+                    .insert([receipt])
+                    .select();
+
+                if (error) throw error;
+                showToast('Synchronisé sur le Cloud !');
+                loadReceipts(); // Rafraîchir la liste locale
+            } catch (err) {
+                console.error('Erreur d\'écriture Supabase:', err);
+                alert('Erreur lors de la sauvegarde en ligne.');
+            }
+        }
+
+        async function deleteAllReceipts() { 
+            if (confirm('Supprimer TOUS les reçus de la base de données en ligne ?')) { 
+                try {
+                    const { error } = await _supabase.from('recus').delete().neq('id', 0);
+                    if (error) throw error;
+                    receipts = []; 
+                    updateStats(); 
+                    showToast('Tous les reçus ont été supprimés'); 
+                    if (currentReceipt) document.getElementById('resultCard').style.display = 'none'; 
+                } catch(err) {
+                    alert('Erreur lors de la suppression globale');
+                }
+            } 
+        }
+
+        function exportToCSV() { if (receipts.length === 0) { alert('Aucun reçu'); return; } const headers = ['Numero','Client','Ville','Pack','Montant','Paiement','Date','Description']; const rows = receipts.map(r => [r.receiptNumber, r.clientName, r.clientCity, r.packType, r.amount, r.paymentMethod, r.date, r.description]); const csv = [headers, ...rows].map(row => row.map(cell => `"${cell}"`).join(',')).join('\n'); const blob = new Blob(["\uFEFF" + csv], {type:'text/csv;charset=utf-8'}); const link = document.createElement('a'); link.href = URL.createObjectURL(blob); link.download = `ntsoa_receipts_${new Date().toISOString().slice(0,10)}.csv`; link.click(); URL.revokeObjectURL(link.href); showToast('Export CSV réussi'); }
+        function updateStats() { document.getElementById('receiptCount').innerHTML = `${receipts.length} reçu(s) sauvegardé(s) (Cloud)`; }
         function getReceiptTypeFromPack(packType) { if (packType === 'Pack Basique') return 'PB'; if (packType === 'Pack Pro') return 'PP'; if (packType === 'Pack Premium') return 'PPR'; return 'A'; }
-        function getNextReceiptNumber(receiptType) { const today = new Date().toISOString().slice(0,10).replace(/-/g, ''); const prefix = receiptType; const todayReceipts = receipts.filter(r => r.receiptNumber.startsWith(prefix + today)); const nextNum = todayReceipts.length + 1; return `${prefix}${today}${nextNum.toString().padStart(4, '0')}`; }
+        function getNextReceiptNumber(receiptType) { const today = new Date().toISOString().slice(0,10).replace(/-/g, ''); const prefix = receiptType; const todayReceipts = receipts.filter(r => r.receiptNumber && r.receiptNumber.startsWith(prefix + today)); const nextNum = todayReceipts.length + 1; return `${prefix}${today}${nextNum.toString().padStart(4, '0')}`; }
         function getPackDescription(packType) { if (packType === 'Pack Basique') return 'Pack Basique (Gestion de Base + BULLETINApp + EDT Ecole)'; if (packType === 'Pack Pro') return 'Pack PRO (Pack Basique + COMPTA Ecole)'; if (packType === 'Pack Premium') return 'Pack PREMIUM (Pack PRO + GestionPAIE)'; return ''; }
 
         let selectedPack = null, selectedPayment = null;
         function updateReceiptPreview() { if (!selectedPack) { document.getElementById('receiptNumberPreview').innerHTML = 'Selectionnez un pack'; return; } const prefix = getReceiptTypeFromPack(selectedPack); const today = new Date().toISOString().slice(0,10).replace(/-/g, ''); document.getElementById('receiptNumberPreview').innerHTML = `${prefix}${today}XXXX`; }
         function getFormData() { const clientName = document.getElementById('clientName').value.trim(); let city = document.getElementById('citySelect').value; if (city === 'Autre') city = document.getElementById('otherCity').value.trim(); const packType = selectedPack; const amount = parseFloat(document.getElementById('amount').value); const paymentMethod = selectedPayment; const date = document.getElementById('receiptDate').value; const autreDesc = document.getElementById('autreDescription').value; return { clientName, city, packType, amount, paymentMethod, date, autreDesc }; }
         function validateForm(data) { if (!data.clientName) { alert('Nom client requis'); return false; } if (!data.city) { alert('Ville requise'); return false; } if (!data.packType) { alert('Pack requis'); return false; } if (!data.amount || data.amount <= 0) { alert('Montant valide requis'); return false; } if (!data.paymentMethod) { alert('Mode de paiement requis'); return false; } if (data.packType === 'Autre' && !data.autreDesc) { alert('Description requise pour "Autre"'); return false; } return true; }
-        async function generateReceipt() { const formData = getFormData(); if (!validateForm(formData)) return; const receiptType = getReceiptTypeFromPack(formData.packType); const receiptNumber = getNextReceiptNumber(receiptType); let description = getPackDescription(formData.packType); if (formData.packType === 'Autre') description = formData.autreDesc || 'Prestation sur mesure'; currentReceipt = { receiptNumber, receiptType, clientName: formData.clientName, clientCity: formData.city, packType: formData.packType, amount: formData.amount, paymentMethod: formData.paymentMethod, date: formData.date, description, createdAt: new Date().toISOString() }; addReceipt(currentReceipt); document.getElementById('resultReceiptNumber').innerText = receiptNumber; document.getElementById('resultCard').style.display = 'block'; generateReceiptPDF(currentReceipt); document.getElementById('resultCard').scrollIntoView({ behavior: 'smooth' }); }
+        
+        async function generateReceipt() { 
+            const formData = getFormData(); 
+            if (!validateForm(formData)) return; 
+            
+            const receiptType = getReceiptTypeFromPack(formData.packType); 
+            const receiptNumber = getNextReceiptNumber(receiptType); 
+            let description = getPackDescription(formData.packType); 
+            if (formData.packType === 'Autre') description = formData.autreDesc || 'Prestation sur mesure'; 
+            
+            currentReceipt = { 
+                receiptNumber, 
+                clientName: formData.clientName, 
+                clientCity: formData.city, 
+                packType: formData.packType, 
+                amount: formData.amount, 
+                paymentMethod: formData.paymentMethod, 
+                date: formData.date, 
+                description
+            }; 
+            
+            // Envoyer la ligne vers Supabase !
+            await addReceiptToCloud(currentReceipt); 
+            
+            document.getElementById('resultReceiptNumber').innerText = receiptNumber; 
+            document.getElementById('resultCard').style.display = 'block'; 
+            generateReceiptPDF(currentReceipt); 
+            document.getElementById('resultCard').scrollIntoView({ behavior: 'smooth' }); 
+        }
+        
         function resetForm() { selectedPack = null; selectedPayment = null; document.querySelectorAll('.pack-card').forEach(c => c.classList.remove('selected')); document.querySelectorAll('.payment-btn').forEach(b => b.classList.remove('selected')); document.getElementById('clientName').value = ''; document.getElementById('citySelect').value = ''; document.getElementById('otherCity').value = ''; document.getElementById('otherCity').style.display = 'none'; document.getElementById('amount').value = ''; document.getElementById('autreFields').style.display = 'none'; document.getElementById('paymentMethod').value = ''; document.getElementById('autreDescription').value = ''; document.getElementById('receiptDate').value = new Date().toISOString().split('T')[0]; updateReceiptPreview(); }
         function showToast(message) { const toast = document.createElement('div'); toast.className = 'toast'; toast.innerHTML = message; document.body.appendChild(toast); setTimeout(() => toast.remove(), 3000); }
 
-        document.addEventListener('DOMContentLoaded', () => { loadReceipts(); document.getElementById('receiptDate').value = new Date().toISOString().split('T')[0];
+        document.addEventListener('DOMContentLoaded', () => { 
+            loadReceipts(); 
+            document.getElementById('receiptDate').value = new Date().toISOString().split('T')[0];
             document.querySelectorAll('.pack-card').forEach(card => { card.addEventListener('click', () => { document.querySelectorAll('.pack-card').forEach(c => c.classList.remove('selected')); card.classList.add('selected'); selectedPack = card.dataset.pack; const price = card.dataset.price; if (selectedPack === 'Autre') { document.getElementById('autreFields').style.display = 'block'; document.getElementById('amount').value = ''; } else { document.getElementById('autreFields').style.display = 'none'; document.getElementById('amount').value = price; } updateReceiptPreview(); }); });
             document.querySelectorAll('.payment-btn').forEach(btn => { btn.addEventListener('click', () => { document.querySelectorAll('.payment-btn').forEach(b => b.classList.remove('selected')); btn.classList.add('selected'); selectedPayment = btn.dataset.method; document.getElementById('paymentMethod').value = selectedPayment; }); });
             const citySelect = document.getElementById('citySelect'); const otherCityInput = document.getElementById('otherCity'); citySelect.addEventListener('change', () => { otherCityInput.style.display = citySelect.value === 'Autre' ? 'block' : 'none'; });
-            document.getElementById('generateBtn').addEventListener('click', generateReceipt); document.getElementById('resetBtn').addEventListener('click', resetForm); document.getElementById('newReceiptBtn').addEventListener('click', () => { document.getElementById('resultCard').style.display = 'none'; resetForm(); }); document.getElementById('clearAllBtn').addEventListener('click', deleteAllReceipts); document.getElementById('exportCsvBtn').addEventListener('click', exportToCSV); document.getElementById('downloadPdfBtn').addEventListener('click', () => { if (currentReceipt) generateReceiptPDF(currentReceipt); else alert('Aucun reçu'); }); updateReceiptPreview(); });
+            document.getElementById('generateBtn').addEventListener('click', generateReceipt); document.getElementById('resetBtn').addEventListener('click', resetForm); document.getElementById('newReceiptBtn').addEventListener('click', () => { document.getElementById('resultCard').style.display = 'none'; resetForm(); }); document.getElementById('clearAllBtn').addEventListener('click', deleteAllReceipts); document.getElementById('exportCsvBtn').addEventListener('click', exportToCSV); document.getElementById('downloadPdfBtn').addEventListener('click', () => { if (currentReceipt) generateReceiptPDF(currentReceipt); else alert('Aucun reçu'); }); updateReceiptPreview(); 
+        });
     </script>
 </body>
 </html>
